@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p ../../packages/shared/tsconfig.build.json && vite build",
+    "build": "pnpm --filter @openframe/shared build && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
