@@ -47,6 +47,7 @@
     "deleteAppDataOnUninstall": false
   },
   "linux": {
+    "icon": "public/logo.svg",
     "target": [
       "AppImage"
     ],

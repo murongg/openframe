@@ -56,7 +56,7 @@ jobs:
         include:
           - target: mac-x64
             os: macos-latest
-            build_command: pnpm -C apps/desktop exec electron-builder --mac zip --x64 && pnpm -C apps/desktop exec electron-builder --mac dmg --x64
+            build_command: pnpm -C apps/desktop exec electron-builder --mac zip --x64 --publish never && pnpm -C apps/desktop exec electron-builder --mac dmg --x64 --publish never
             artifact_name: desktop-release-mac-x64
             release_glob: |
               apps/desktop/release/**/*-Mac-x64-*.zip
@@ -64,7 +64,7 @@ jobs:
               apps/desktop/release/**/*-Mac-x64-*.blockmap
           - target: mac-arm64
             os: macos-latest
-            build_command: pnpm -C apps/desktop exec electron-builder --mac zip --arm64 && pnpm -C apps/desktop exec electron-builder --mac dmg --arm64
+            build_command: pnpm -C apps/desktop exec electron-builder --mac zip --arm64 --publish never && pnpm -C apps/desktop exec electron-builder --mac dmg --arm64 --publish never
             artifact_name: desktop-release-mac-arm64
             release_glob: |
               apps/desktop/release/**/*-Mac-arm64-*.zip
@@ -72,14 +72,14 @@ jobs:
               apps/desktop/release/**/*-Mac-arm64-*.blockmap
           - target: windows-x64
             os: windows-latest
-            build_command: pnpm -C apps/desktop exec electron-builder --win --x64
+            build_command: pnpm -C apps/desktop exec electron-builder --win --x64 --publish never
             artifact_name: desktop-release-windows-x64
             release_glob: |
               apps/desktop/release/**/Openframe-Windows-*-Setup.exe
               apps/desktop/release/**/Openframe-Windows-*-Setup.exe.blockmap
           - target: linux-x64
             os: ubuntu-latest
-            build_command: pnpm -C apps/desktop exec electron-builder --linux --x64
+            build_command: pnpm -C apps/desktop exec electron-builder --linux --x64 --publish never
             artifact_name: desktop-release-linux-x64
             release_glob: apps/desktop/release/**/*.AppImage
 
