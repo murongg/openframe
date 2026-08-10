@@ -3,7 +3,7 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@9.12.2",
-  "version": "0.0.20",
+  "version": "0.0.21",
   "scripts": {
     "dev": "pnpm --filter openframe dev",
     "dev:web": "pnpm --filter openframe-web dev",
