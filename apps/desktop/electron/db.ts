@@ -9,10 +9,11 @@ import * as schema from '@openframe/db'
 import { getProviderById, type AIConfig } from '@openframe/providers'
 import { store } from './store'
 import { getDataDir } from './data_dir'
+import { resolveSqliteVecExtensionPath } from './sqlite-vec'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
-const sqliteVec = require('sqlite-vec') as { load: (db: unknown) => void }
+const sqliteVec = require('sqlite-vec') as { getLoadablePath: () => string }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -187,7 +188,7 @@ export function getDb() {
     fs.mkdirSync(DB_DIR, { recursive: true })
     _sqlite = new Database(DB_PATH)
     _sqlite.pragma('journal_mode = WAL')
-    sqliteVec.load(_sqlite)
+    _sqlite.loadExtension(resolveSqliteVecExtensionPath(sqliteVec.getLoadablePath(), app.isPackaged))
     _db = drizzle(_sqlite, { schema })
 
     try {

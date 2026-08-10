@@ -62,6 +62,9 @@ importers:
       better-sqlite3:
         specifier: ^12.6.2
         version: 12.6.2
+      bindings:
+        specifier: ^1.5.0
+        version: 1.5.0
       cytoscape:
         specifier: ^3.33.1
         version: 3.33.1
@@ -74,6 +77,9 @@ importers:
       electron-store:
         specifier: ^11.0.2
         version: 11.0.2
+      file-uri-to-path:
+        specifier: ^1.0.0
+        version: 1.0.0
       i18next:
         specifier: ^25.8.13
         version: 25.8.13(typescript@5.9.3)
@@ -96,6 +102,22 @@ importers:
         specifier: ^3.4.0
         version: 3.4.0(@svta/cml-cta@1.0.1(@svta/cml-structured-field-values@1.0.1(@svta/cml-utils@1.0.1))(@svta/cml-utils@1.0.1))(@svta/cml-structured-field-values@1.0.1(@svta/cml-utils@1.0.1))(@svta/cml-utils@1.0.1)(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       sqlite-vec:
+        specifier: 0.1.7-alpha.2
+        version: 0.1.7-alpha.2
+    optionalDependencies:
+      sqlite-vec-darwin-arm64:
+        specifier: 0.1.7-alpha.2
+        version: 0.1.7-alpha.2
+      sqlite-vec-darwin-x64:
+        specifier: 0.1.7-alpha.2
+        version: 0.1.7-alpha.2
+      sqlite-vec-linux-arm64:
+        specifier: 0.1.7-alpha.2
+        version: 0.1.7-alpha.2
+      sqlite-vec-linux-x64:
+        specifier: 0.1.7-alpha.2
+        version: 0.1.7-alpha.2
+      sqlite-vec-windows-x64:
         specifier: 0.1.7-alpha.2
         version: 0.1.7-alpha.2
     devDependencies:
