@@ -34,6 +34,9 @@ jobs:
           pnpm test:run
           pnpm lint
 
+      - name: Generate route tree
+        run: pnpm -C apps/ui build
+
       - name: Type-check applications
         run: |
           pnpm -C apps/desktop exec tsc --noEmit
