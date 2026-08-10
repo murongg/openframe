@@ -15,6 +15,7 @@ import {
   stringifyObjectStorageConfigForSetting,
   type ObjectStorageConfig,
 } from '../utils/storage_config'
+import { persistSettings } from './settings/persist_settings'
 
 type Category = 'general' | 'provider' | 'concurrency' | 'data'
 
@@ -48,6 +49,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [pendingTheme, setPendingTheme] = useState<Theme>('system')
   const [pendingAI,    setPendingAI]    = useState<AIConfig>(DEFAULT_AI_CONFIG)
   const [pendingStorage, setPendingStorage] = useState<ObjectStorageConfig>(DEFAULT_OBJECT_STORAGE_CONFIG)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const { data: settingsList } = useLiveQuery(settingsCollection)
 
@@ -64,23 +67,37 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     window.aiAPI.getConfig().then((cfg) => setPendingAI((cfg as AIConfig) ?? DEFAULT_AI_CONFIG))
   }, [open, settingsMap.language, settingsMap.theme, settingsMap.storage_config, fallbackLanguage])
 
-  function upsertSetting(key: string, value: string) {
-    if (settingsList?.some((s) => s.id === key)) {
-      settingsCollection.update(key, (draft) => { draft.value = value })
-    } else {
-      settingsCollection.insert({ id: key, value })
-    }
+  async function upsertSetting(key: string, value: string): Promise<void> {
+    const transaction = settingsList?.some((s) => s.id === key)
+      ? settingsCollection.update(key, (draft) => { draft.value = value })
+      : settingsCollection.insert({ id: key, value })
+    await transaction.isPersisted.promise
   }
 
-  function handleSave() {
+  async function handleSave() {
+    if (saving) return
     const nextLang = normalizeLanguage(pendingLang, fallbackLanguage)
-    i18n.changeLanguage(nextLang)
-    upsertSetting('theme', pendingTheme)
-    upsertSetting('language', nextLang)
-    upsertSetting('storage_config', stringifyObjectStorageConfigForSetting(pendingStorage))
-    window.aiAPI.saveConfig(pendingAI)
-    applyTheme(pendingTheme)
-    onClose()
+    setSaving(true)
+    setSaveError('')
+    try {
+      await persistSettings({
+        settings: {
+          theme: pendingTheme,
+          language: nextLang,
+          storage_config: stringifyObjectStorageConfigForSetting(pendingStorage),
+        },
+        aiConfig: pendingAI,
+        upsertSetting,
+        saveAIConfig: (config) => window.aiAPI.saveConfig(config),
+      })
+      await i18n.changeLanguage(nextLang)
+      applyTheme(pendingTheme)
+      onClose()
+    } catch {
+      setSaveError(t('settings.saveFailed'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   function handleCancel() {
@@ -153,19 +170,23 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
             )}
 
             {/* Footer */}
-            <div className="flex justify-end gap-2 px-6 py-4 border-t border-base-300 shrink-0">
-              <button className="btn btn-ghost" onClick={handleCancel}>
-                {t('settings.cancel')}
-              </button>
-              <button className="btn btn-primary" onClick={handleSave}>
-                {t('settings.save')}
-              </button>
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-base-300 shrink-0">
+              <p className="text-xs text-error" role="alert">{saveError}</p>
+              <div className="flex justify-end gap-2">
+                <button className="btn btn-ghost" onClick={handleCancel} disabled={saving}>
+                  {t('settings.cancel')}
+                </button>
+                <button className="btn btn-primary" onClick={() => void handleSave()} disabled={saving}>
+                  {saving ? <span className="loading loading-spinner loading-xs" /> : null}
+                  {saving ? t('settings.saving') : t('settings.save')}
+                </button>
+              </div>
             </div>
 
           </div>
         </div>
       </div>
-      <div className="modal-backdrop" onClick={handleCancel} />
+      <div className="modal-backdrop" onClick={() => { if (!saving) handleCancel() }} />
     </dialog>,
     document.body
   )

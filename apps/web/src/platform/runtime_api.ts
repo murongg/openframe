@@ -176,7 +176,7 @@ async function getDataInfo(): Promise<DataInfo> {
   return {
     defaultDir: DEFAULT_DATA_DIR,
     currentDir,
-    pendingDir: currentDir,
+    pendingDir: '',
     dbSize,
     thumbsSize,
     videosSize,
@@ -188,27 +188,6 @@ export function ensureWebRuntimeAPIs(): void {
 
   if (runtimeWindow.settingsAPI && runtimeWindow.projectsAPI) return
   ensureProxyFetchInstalled()
-
-  const ipcRendererShim = {
-    on: () => ipcRendererShim as unknown as Window['ipcRenderer'],
-    off: () => ipcRendererShim as unknown as Window['ipcRenderer'],
-    send: () => undefined,
-    invoke: async () => {
-      throw new Error('IPC is unavailable in web runtime')
-    },
-    removeListener: () => ipcRendererShim as unknown as Window['ipcRenderer'],
-  } as unknown as Window['ipcRenderer']
-
-  runtimeWindow.ipcRenderer = ipcRendererShim
-
-  runtimeWindow.sqlite = {
-    query: async () => {
-      throw new Error('SQLite query API is unavailable in web runtime')
-    },
-    select: async () => {
-      throw new Error('SQLite select API is unavailable in web runtime')
-    },
-  }
 
   runtimeWindow.settingsAPI = {
     getAll: async () =>

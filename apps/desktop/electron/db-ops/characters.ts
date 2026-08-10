@@ -1,4 +1,5 @@
 import { getRawDb } from '../db'
+import { pruneShotReferences } from './references'
 import { runInTransaction } from './tx'
 
 export type CharacterRow = {
@@ -246,6 +247,13 @@ export function replaceCharactersByProject(payload: { projectId: string; charact
     }
 
     removeCharacterReferencesFromCostumes(raw, payload.projectId, removedIds)
+    pruneShotReferences(raw, 'character_ids', removedIds, payload.projectId)
+    const deleteRelationStmt = raw.prepare(
+      'DELETE FROM character_relations WHERE source_character_id = ? OR target_character_id = ?',
+    )
+    for (const id of removedIds) {
+      deleteRelationStmt.run(id, id)
+    }
   })
 }
 
@@ -306,6 +314,10 @@ export function deleteCharacter(id: string): void {
       .get(id) as { project_id: string } | undefined
     raw.prepare('DELETE FROM series_character_links WHERE character_id = ?').run(id)
     raw.prepare('DELETE FROM characters WHERE id = ?').run(id)
+    raw
+      .prepare('DELETE FROM character_relations WHERE source_character_id = ? OR target_character_id = ?')
+      .run(id, id)
+    pruneShotReferences(raw, 'character_ids', new Set([id]), row?.project_id)
     if (row?.project_id) {
       removeCharacterReferencesFromCostumes(raw, row.project_id, new Set([id]))
     }

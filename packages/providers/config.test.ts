@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_AI_CONFIG, parseAIConfig } from './config'
+import { DEFAULT_AI_CONFIG, normalizeAIConfig, parseAIConfig } from './config'
 
 describe('parseAIConfig', () => {
+  it('normalizes an object received over IPC without stringifying it first', () => {
+    const parsed = normalizeAIConfig({
+      customProviders: [{ id: ' custom ', name: ' Custom ' }],
+      customModels: {
+        custom: [{ id: 'model', name: 'Model', type: 'text' }],
+      },
+    })
+
+    expect(parsed.customProviders).toEqual([{ id: 'custom', name: 'Custom' }])
+    expect(parsed.customModels.custom).toEqual([{ id: 'model', name: 'Model', type: 'text' }])
+    expect(parsed.concurrency).toEqual(DEFAULT_AI_CONFIG.concurrency)
+  })
+
   it('returns default config when input is empty or invalid json', () => {
     expect(parseAIConfig(undefined)).toBe(DEFAULT_AI_CONFIG)
     expect(parseAIConfig('{bad json')).toBe(DEFAULT_AI_CONFIG)

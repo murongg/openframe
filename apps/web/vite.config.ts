@@ -13,7 +13,11 @@ type DevProxyResponse = {
 }
 
 type DevApiHandler = (
-  req: { method?: string; body?: unknown },
+  req: {
+    method?: string
+    body?: unknown
+    headers?: Record<string, string | string[] | undefined>
+  },
   res: DevProxyResponse,
 ) => Promise<void> | void
 
@@ -73,6 +77,7 @@ function createWebApiPlugin(): Plugin {
             {
               method: req.method,
               body,
+              headers: req.headers,
             },
             responseAdapter,
           )

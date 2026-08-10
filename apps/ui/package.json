@@ -15,11 +15,11 @@
     "@openframe/shared": "workspace:*",
     "@tanstack/db": "^0.5.28",
     "@tanstack/react-db": "^0.1.72",
-    "@tanstack/react-router": "^1.162.2",
-    "@tiptap/markdown": "^3.20.0",
-    "@tiptap/pm": "^3.20.0",
-    "@tiptap/react": "^3.20.0",
-    "@tiptap/starter-kit": "^3.20.0",
+    "@tanstack/react-router": "^1.170.25",
+    "@tiptap/markdown": "^3.29.2",
+    "@tiptap/pm": "^3.29.2",
+    "@tiptap/react": "^3.29.2",
+    "@tiptap/starter-kit": "^3.29.2",
     "ai": "^6.0.97",
     "cytoscape": "^3.33.1",
     "driver.js": "^1.4.0",
@@ -34,13 +34,13 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.0",
-    "@tanstack/router-plugin": "^1.162.2",
+    "@tanstack/router-plugin": "^1.168.29",
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",
     "@vitejs/plugin-react": "^4.2.1",
     "daisyui": "^5.5.19",
     "tailwindcss": "^4.2.0",
     "typescript": "^5.2.2",
-    "vite": "^5.1.6"
+    "vite": "^7.3.6"
   }
 }

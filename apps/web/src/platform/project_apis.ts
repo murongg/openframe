@@ -13,6 +13,7 @@ import {
   sortByCreatedAsc,
   sortSeriesByProjectOrder,
   normalizeIds,
+  removeIds,
   normalizeCharacterRow,
   normalizeCostumeRow,
   normalizeShotRow,
@@ -37,6 +38,37 @@ async function removeCharacterReferencesFromCostumes(
       ...row,
       character_ids: nextCharacterIds,
     } satisfies CostumeRow)
+  }))
+}
+
+type ShotReferenceField = 'character_ids' | 'prop_ids' | 'costume_ids'
+
+async function pruneShotReferences(
+  field: ShotReferenceField,
+  removedIds: ReadonlySet<string>,
+  projectId?: string,
+): Promise<void> {
+  if (removedIds.size === 0) return
+
+  const [shots, seriesRows] = await Promise.all([
+    getAllRows<ShotRow>(STORE_NAMES.shots),
+    projectId ? getAllRows<SeriesRow>(STORE_NAMES.series) : Promise.resolve([]),
+  ])
+  const projectSeriesIds = projectId
+    ? new Set(seriesRows.filter((row) => row.project_id === projectId).map((row) => row.id))
+    : null
+  const targets = projectSeriesIds
+    ? shots.filter((shot) => projectSeriesIds.has(shot.series_id))
+    : shots
+
+  await Promise.all(targets.map(async (shot) => {
+    const currentIds = normalizeIds(shot[field])
+    const nextIds = removeIds(currentIds, removedIds)
+    if (nextIds.length === currentIds.length) return
+    await putRow(STORE_NAMES.shots, {
+      ...shot,
+      [field]: nextIds,
+    } satisfies ShotRow)
   }))
 }
 
@@ -230,7 +262,12 @@ export function registerProjectApis(runtimeWindow: Window): void {
           STORE_NAMES.seriesCharacterLinks,
           (row) => row.character_id === id,
         ),
+        removeRowsWhere<CharacterRelationRow>(
+          STORE_NAMES.characterRelations,
+          (row) => row.source_character_id === id || row.target_character_id === id,
+        ),
         deleteRowById(STORE_NAMES.characters, id),
+        pruneShotReferences('character_ids', new Set([id]), row?.project_id),
       ])
       if (row?.project_id) {
         await removeCharacterReferencesFromCostumes(row.project_id, new Set([id]))
@@ -260,7 +297,14 @@ export function registerProjectApis(runtimeWindow: Window): void {
           project_id: payload.projectId,
         })),
       ))
-      await removeCharacterReferencesFromCostumes(payload.projectId, removedIds)
+      await Promise.all([
+        removeCharacterReferencesFromCostumes(payload.projectId, removedIds),
+        pruneShotReferences('character_ids', removedIds, payload.projectId),
+        removeRowsWhere<CharacterRelationRow>(
+          STORE_NAMES.characterRelations,
+          (row) => removedIds.has(row.source_character_id) || removedIds.has(row.target_character_id),
+        ),
+      ])
     },
     replaceBySeries: async (payload: {
       projectId: string
@@ -386,9 +430,18 @@ export function registerProjectApis(runtimeWindow: Window): void {
           (row) => row.prop_id === id,
         ),
         deleteRowById(STORE_NAMES.props, id),
+        pruneShotReferences('prop_ids', new Set([id])),
       ])
     },
     replaceByProject: async (payload: { projectId: string; props: PropRow[] }) => {
+      const existingProps = await getAllRows<PropRow>(STORE_NAMES.props)
+      const nextIds = new Set(payload.props.map((prop) => prop.id))
+      const removedIds = new Set(
+        existingProps
+          .filter((row) => row.project_id === payload.projectId)
+          .map((row) => row.id)
+          .filter((id) => !nextIds.has(id)),
+      )
       await Promise.all([
         removeRowsWhere<SeriesPropLinkRow>(
           STORE_NAMES.seriesPropLinks,
@@ -405,6 +458,7 @@ export function registerProjectApis(runtimeWindow: Window): void {
           project_id: payload.projectId,
         }),
       ))
+      await pruneShotReferences('prop_ids', removedIds, payload.projectId)
     },
     replaceBySeries: async (payload: {
       projectId: string
@@ -497,9 +551,18 @@ export function registerProjectApis(runtimeWindow: Window): void {
           (row) => row.costume_id === id,
         ),
         deleteRowById(STORE_NAMES.costumes, id),
+        pruneShotReferences('costume_ids', new Set([id])),
       ])
     },
     replaceByProject: async (payload: { projectId: string; costumes: CostumeRow[] }) => {
+      const existingCostumes = await getAllRows<CostumeRow>(STORE_NAMES.costumes)
+      const nextIds = new Set(payload.costumes.map((costume) => costume.id))
+      const removedIds = new Set(
+        existingCostumes
+          .filter((row) => row.project_id === payload.projectId)
+          .map((row) => row.id)
+          .filter((id) => !nextIds.has(id)),
+      )
       await Promise.all([
         removeRowsWhere<SeriesCostumeLinkRow>(
           STORE_NAMES.seriesCostumeLinks,
@@ -516,6 +579,7 @@ export function registerProjectApis(runtimeWindow: Window): void {
           project_id: payload.projectId,
         })),
       ))
+      await pruneShotReferences('costume_ids', removedIds, payload.projectId)
     },
     replaceBySeries: async (payload: {
       projectId: string

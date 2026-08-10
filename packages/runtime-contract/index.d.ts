@@ -1,8 +1,3 @@
-interface SqliteAPI {
-  query(sql: string, params?: unknown[]): Promise<{ changes: number; lastInsertRowid: number }>
-  select<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>
-}
-
 type GenreRow = { id: string; name: string; code: string; description: string; prompt: string; thumbnail: string | null; created_at: number }
 type CategoryRow = { id: string; name: string; code: string; created_at: number }
 type ProjectRow = {
@@ -125,18 +120,8 @@ type ObjectStorageConfig = {
   forcePathStyle: boolean
 }
 
-type IpcRendererLike = {
-  on: (...args: unknown[]) => IpcRendererLike
-  off: (...args: unknown[]) => IpcRendererLike
-  send: (...args: unknown[]) => void
-  invoke: (...args: unknown[]) => Promise<unknown>
-  removeListener: (...args: unknown[]) => IpcRendererLike
-}
-
 // Used in Renderer process, expose in `preload.ts`
 interface Window {
-  ipcRenderer: IpcRendererLike
-  sqlite: SqliteAPI
   aiAPI: {
     getConfig: () => Promise<unknown>
     saveConfig: (config: unknown) => Promise<void>

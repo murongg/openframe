@@ -8,16 +8,16 @@ import {
   generateImageWithProviderSupport,
   generateVideoWithProviderSupport,
 } from '@openframe/providers/factory'
-import type { AIConfig } from '@openframe/providers'
+import { normalizeAIConfig, type AIConfig } from '@openframe/providers'
 import { store } from '../../store'
 import { resolveImageModel, resolveVideoModel } from './model'
 import { shortError } from './shared'
 
 export function registerAIBaseAndMediaHandlers() {
-  ipcMain.handle('ai:getConfig', (): AIConfig => store.get('ai_config'))
+  ipcMain.handle('ai:getConfig', (): AIConfig => normalizeAIConfig(store.get('ai_config')))
 
   ipcMain.handle('ai:saveConfig', (_event, config: AIConfig) => {
-    store.set('ai_config', config)
+    store.set('ai_config', normalizeAIConfig(config))
   })
 
   ipcMain.handle(

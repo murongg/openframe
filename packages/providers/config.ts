@@ -108,6 +108,72 @@ function normalizeProviders(raw: unknown): Record<string, AIProviderConfig> {
   return out
 }
 
+function normalizeModels(raw: unknown): AIConfig['models'] {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_AI_CONFIG.models }
+  const row = raw as Partial<AIConfig['models']>
+  return {
+    text: typeof row.text === 'string' ? row.text : '',
+    image: typeof row.image === 'string' ? row.image : '',
+    video: typeof row.video === 'string' ? row.video : '',
+    embedding: typeof row.embedding === 'string' ? row.embedding : '',
+  }
+}
+
+function normalizeCustomModels(raw: unknown): Record<string, ModelDef[]> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, ModelDef[]> = {}
+  const allowedTypes = new Set<ModelType>(['text', 'image', 'video', 'embedding'])
+
+  for (const [providerId, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(value)) continue
+    const models = value.flatMap((item): ModelDef[] => {
+      if (!item || typeof item !== 'object') return []
+      const row = item as Partial<ModelDef>
+      const id = typeof row.id === 'string' ? row.id.trim() : ''
+      const name = typeof row.name === 'string' ? row.name.trim() : ''
+      const type = row.type
+      if (!id || !name || !type || !allowedTypes.has(type)) return []
+      const dimension = Number(row.dimension)
+      return [{
+        id,
+        name,
+        type,
+        ...(type === 'embedding' && Number.isInteger(dimension) && dimension > 0
+          ? { dimension }
+          : {}),
+      }]
+    })
+    if (models.length > 0) out[providerId] = models
+  }
+
+  return out
+}
+
+function normalizeBooleanRecord(raw: unknown): Record<string, boolean> {
+  if (!raw || typeof raw !== 'object') return {}
+  return Object.fromEntries(
+    Object.entries(raw as Record<string, unknown>)
+      .filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'),
+  )
+}
+
+export function normalizeAIConfig(raw: unknown): AIConfig {
+  if (!raw || typeof raw !== 'object') return DEFAULT_AI_CONFIG
+  const parsed = raw as Partial<AIConfig>
+  return {
+    providers: normalizeProviders(parsed.providers),
+    customProviders: normalizeCustomProviders(parsed.customProviders),
+    models: normalizeModels(parsed.models),
+    customModels: normalizeCustomModels(parsed.customModels),
+    enabledModels: normalizeBooleanRecord(parsed.enabledModels),
+    hiddenModels: normalizeBooleanRecord(parsed.hiddenModels),
+    concurrency: {
+      image: normalizeConcurrency(parsed.concurrency?.image, DEFAULT_AI_CONFIG.concurrency.image),
+      video: normalizeConcurrency(parsed.concurrency?.video, DEFAULT_AI_CONFIG.concurrency.video),
+    },
+  }
+}
+
 export function getProviderBaseUrl(
   config: AIProviderConfig,
   type: 'text' | 'image' | 'video' | 'embedding',
@@ -131,19 +197,7 @@ export function getProviderBaseUrl(
 export function parseAIConfig(raw: string | undefined): AIConfig {
   if (!raw) return DEFAULT_AI_CONFIG
   try {
-    const parsed = JSON.parse(raw) as Partial<AIConfig>
-    return {
-      providers: normalizeProviders(parsed.providers),
-      customProviders: normalizeCustomProviders(parsed.customProviders),
-      models: { ...DEFAULT_AI_CONFIG.models, ...parsed.models },
-      customModels: parsed.customModels ?? {},
-      enabledModels: parsed.enabledModels ?? {},
-      hiddenModels: parsed.hiddenModels ?? {},
-      concurrency: {
-        image: normalizeConcurrency(parsed.concurrency?.image, DEFAULT_AI_CONFIG.concurrency.image),
-        video: normalizeConcurrency(parsed.concurrency?.video, DEFAULT_AI_CONFIG.concurrency.video),
-      },
-    }
+    return normalizeAIConfig(JSON.parse(raw))
   } catch {
     return DEFAULT_AI_CONFIG
   }

@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, nativeImage, protocol, screen, shell } from 'electron'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import fsSync from 'node:fs'
 import fs from 'node:fs/promises'
@@ -10,6 +10,7 @@ import { registerAIHandlers } from './handlers/ai'
 import { registerMediaHandlers } from './handlers/media'
 import { getDataDir } from './data_dir'
 import { registerDatabaseHandlers } from './db-ops/register/handlers'
+import { isAllowedExternalUrl, isTrustedRendererUrl } from './security'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -58,13 +59,23 @@ function contentTypeFromPath(filePath: string): string {
   return 'application/octet-stream'
 }
 
-function isAllowedExternalUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value)
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
-  } catch {
-    return false
-  }
+function getRendererEntryUrl(): string {
+  return VITE_DEV_SERVER_URL || pathToFileURL(path.join(RENDERER_DIST, 'index.html')).toString()
+}
+
+function secureWindowNavigation(window: BrowserWindow, rendererUrl: string): void {
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedExternalUrl(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  window.webContents.on('will-navigate', (event, url) => {
+    if (isTrustedRendererUrl(url, rendererUrl)) return
+    event.preventDefault()
+    if (isAllowedExternalUrl(url)) void shell.openExternal(url)
+  })
+  window.webContents.on('will-attach-webview', (event) => {
+    event.preventDefault()
+  })
 }
 
 function createWindow() {
@@ -75,17 +86,20 @@ function createWindow() {
     titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
     },
     width: 1440,
     height: 900,
   })
 
-  win.webContents.on('did-finish-load', () => {
-    win?.webContents.send('main-process-message', new Date().toLocaleString())
-  })
+  const rendererUrl = getRendererEntryUrl()
+  secureWindowNavigation(win, rendererUrl)
 
   if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL)
+    win.loadURL(rendererUrl)
   } else {
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
   }
@@ -106,16 +120,18 @@ function createStudioWindow(projectId: string, seriesId: string) {
     height,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
     },
   })
 
   const studioHashPath = `/projects/${encodeURIComponent(projectId)}?studio=1&projectId=${encodeURIComponent(projectId)}&seriesId=${encodeURIComponent(seriesId)}`
 
-  if (VITE_DEV_SERVER_URL) {
-    studioWin.loadURL(`${VITE_DEV_SERVER_URL}#${studioHashPath}`)
-  } else {
-    studioWin.loadURL(`file://${path.join(RENDERER_DIST, 'index.html')}#${studioHashPath}`)
-  }
+  const rendererUrl = getRendererEntryUrl()
+  secureWindowNavigation(studioWin, rendererUrl)
+  studioWin.loadURL(`${rendererUrl}#${studioHashPath}`)
 }
 
 app.on('window-all-closed', () => {
@@ -153,7 +169,7 @@ app.whenReady().then(() => {
     if (dockIconPath) {
       const dockIcon = nativeImage.createFromPath(dockIconPath)
       if (!dockIcon.isEmpty()) {
-        app.dock.setIcon(dockIcon)
+        app.dock?.setIcon(dockIcon)
       }
     }
   }

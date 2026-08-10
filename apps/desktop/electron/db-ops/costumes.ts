@@ -1,4 +1,5 @@
 import { getRawDb } from '../db'
+import { pruneShotReferences } from './references'
 import { runInTransaction } from './tx'
 
 export type CostumeRow = {
@@ -157,6 +158,12 @@ export function updateCostume(costume: CostumeRow): void {
 
 export function replaceCostumesByProject(payload: { projectId: string; costumes: CostumeRow[] }): void {
   runInTransaction((raw) => {
+    const existingRows = raw
+      .prepare('SELECT id FROM costumes WHERE project_id = ?')
+      .all(payload.projectId) as Array<{ id: string }>
+    const nextIds = new Set(payload.costumes.map((costume) => costume.id))
+    const removedIds = new Set(existingRows.map((row) => row.id).filter((id) => !nextIds.has(id)))
+
     raw.prepare('DELETE FROM series_costume_links WHERE project_id = ?').run(payload.projectId)
     raw.prepare('DELETE FROM costumes WHERE project_id = ?').run(payload.projectId)
     const insertStmt = raw.prepare(
@@ -175,6 +182,8 @@ export function replaceCostumesByProject(payload: { projectId: string; costumes:
         next.created_at,
       )
     }
+
+    pruneShotReferences(raw, 'costume_ids', removedIds, payload.projectId)
   })
 }
 
@@ -230,5 +239,6 @@ export function deleteCostume(id: string): void {
   runInTransaction((raw) => {
     raw.prepare('DELETE FROM series_costume_links WHERE costume_id = ?').run(id)
     raw.prepare('DELETE FROM costumes WHERE id = ?').run(id)
+    pruneShotReferences(raw, 'costume_ids', new Set([id]))
   })
 }

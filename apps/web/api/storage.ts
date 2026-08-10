@@ -1,5 +1,6 @@
 import { createObjectStorageFactory } from '@openframe/shared/object-storage-factory'
 import type { ObjectStorageConfig } from '@openframe/shared/object-storage-config'
+import { assertPublicProxyTarget, isSameOriginRequest } from './proxy_policy'
 
 type UploadBody = {
   config?: Partial<ObjectStorageConfig>
@@ -12,10 +13,28 @@ type UploadResponse =
   | { ok: true; url: string }
   | { ok: false; error: string }
 
-function setCorsHeaders(res: { setHeader: (name: string, value: string) => void }) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+const MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+
+type RequestHeaders = Record<string, string | string[] | undefined>
+
+function firstHeader(headers: RequestHeaders | undefined, name: string): string {
+  const value = headers?.[name]
+  return Array.isArray(value) ? value[0] ?? '' : value ?? ''
+}
+
+function hasTrustedOrigin(headers: RequestHeaders | undefined): boolean {
+  const origin = firstHeader(headers, 'origin')
+  const host = firstHeader(headers, 'x-forwarded-host') || firstHeader(headers, 'host')
+  const forwardedProtocol = firstHeader(headers, 'x-forwarded-proto')
+  let protocol = forwardedProtocol
+  if (!protocol && origin) {
+    try {
+      protocol = new URL(origin).protocol
+    } catch {
+      return false
+    }
+  }
+  return isSameOriginRequest(origin, host, protocol || 'https')
 }
 
 function json(
@@ -57,16 +76,14 @@ function resolveHttpStatus(err: unknown): number {
 }
 
 export default async function handler(
-  req: { method?: string; body?: unknown },
+  req: { method?: string; body?: unknown; headers?: RequestHeaders },
   res: {
     setHeader: (name: string, value: string) => void
     status: (code: number) => { json: (payload: UploadResponse) => void }
   },
 ) {
-  setCorsHeaders(res)
-
-  if (req.method === 'OPTIONS') {
-    json(res, 200, { ok: true, url: '' })
+  if (!hasTrustedOrigin(req.headers)) {
+    json(res, 403, { ok: false, error: 'Cross-origin storage access is not allowed' })
     return
   }
 
@@ -92,8 +109,17 @@ export default async function handler(
     json(res, 400, { ok: false, error: 'Missing media data' })
     return
   }
+  if (Math.ceil(dataBase64.length * 3 / 4) > MAX_UPLOAD_BYTES) {
+    json(res, 413, { ok: false, error: 'Media upload is too large' })
+    return
+  }
 
   try {
+    const endpoint = body.config?.endpoint?.trim() || ''
+    if (endpoint) {
+      const endpointUrl = /^https?:\/\//i.test(endpoint) ? endpoint : `https://${endpoint}`
+      await assertPublicProxyTarget(endpointUrl)
+    }
     const storage = createObjectStorageFactory(body.config ?? null)
     if (!storage.enabled) {
       json(res, 400, { ok: false, error: 'Object storage is not configured' })

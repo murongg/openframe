@@ -1,3 +1,10 @@
+import {
+  assertProxyRequestBodyWithinLimit,
+  fetchPublicProxyTarget,
+  isSameOriginRequest,
+  readResponseBodyWithinLimit,
+} from './proxy_policy'
+
 type ProxyRequestBody = {
   url: string
   method?: string
@@ -17,47 +24,31 @@ type ProxyResponseBody = {
   error: string
 }
 
-function setCorsHeaders(res: { setHeader: (name: string, value: string) => void }) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+const ALLOWED_METHODS = new Set(['GET', 'POST', 'DELETE'])
+const MAX_PROXY_BODY_BYTES = 64 * 1024 * 1024
+const MAX_PROXY_RESPONSE_BYTES = 64 * 1024 * 1024
+const PROXY_TIMEOUT_MS = 5 * 60 * 1000
+
+type RequestHeaders = Record<string, string | string[] | undefined>
+
+function firstHeader(headers: RequestHeaders | undefined, name: string): string {
+  const value = headers?.[name]
+  return Array.isArray(value) ? value[0] ?? '' : value ?? ''
 }
 
-function isPrivateHostname(hostname: string): boolean {
-  const host = hostname.toLowerCase()
-  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
-
-  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
-  if (!ipv4) return false
-
-  const parts = ipv4.slice(1).map((part) => Number(part))
-  if (parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true
-
-  if (parts[0] === 10) return true
-  if (parts[0] === 127) return true
-  if (parts[0] === 192 && parts[1] === 168) return true
-  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true
-
-  return false
-}
-
-function parseTargetUrl(rawUrl: string): URL {
-  let url: URL
-  try {
-    url = new URL(rawUrl)
-  } catch {
-    throw new Error('Invalid target URL')
+function hasTrustedOrigin(headers: RequestHeaders | undefined): boolean {
+  const origin = firstHeader(headers, 'origin')
+  const host = firstHeader(headers, 'x-forwarded-host') || firstHeader(headers, 'host')
+  const forwardedProtocol = firstHeader(headers, 'x-forwarded-proto')
+  let protocol = forwardedProtocol
+  if (!protocol && origin) {
+    try {
+      protocol = new URL(origin).protocol
+    } catch {
+      return false
+    }
   }
-
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new Error('Only http/https proxy is allowed')
-  }
-
-  if (isPrivateHostname(url.hostname)) {
-    throw new Error('Private network target is not allowed')
-  }
-
-  return url
+  return isSameOriginRequest(origin, host, protocol || 'https')
 }
 
 function normalizeHeaders(raw: unknown): Record<string, string> {
@@ -71,7 +62,16 @@ function normalizeHeaders(raw: unknown): Record<string, string> {
     if (!headerName) return
 
     const lower = headerName.toLowerCase()
-    if (lower === 'host' || lower === 'content-length' || lower === 'connection') return
+    if (
+      lower === 'host'
+      || lower === 'content-length'
+      || lower === 'connection'
+      || lower === 'cookie'
+      || lower === 'origin'
+      || lower === 'referer'
+      || lower === 'forwarded'
+      || lower.startsWith('x-forwarded-')
+    ) return
 
     out[headerName] = value
   })
@@ -118,7 +118,9 @@ function encodeBase64(value: Uint8Array): string {
 
 function decodeForwardBody(body: ProxyRequestBody): BodyInit | undefined {
   if (!body.body) return undefined
-  if (body.bodyEncoding === 'text') return body.body
+  const encoding = body.bodyEncoding === 'text' ? 'text' : 'base64'
+  assertProxyRequestBodyWithinLimit(body.body, encoding, MAX_PROXY_BODY_BYTES)
+  if (encoding === 'text') return body.body
 
   try {
     const bytes = decodeBase64(body.body)
@@ -147,16 +149,14 @@ function json(
 }
 
 export default async function handler(
-  req: { method?: string; body?: unknown },
+  req: { method?: string; body?: unknown; headers?: RequestHeaders },
   res: {
     setHeader: (name: string, value: string) => void
     status: (code: number) => { json: (payload: ProxyResponseBody) => void }
   },
 ) {
-  setCorsHeaders(res)
-
-  if (req.method === 'OPTIONS') {
-    json(res, 200, { ok: true, status: 200, headers: {}, body: '', bodyEncoding: 'base64' })
+  if (!hasTrustedOrigin(req.headers)) {
+    json(res, 403, { ok: false, error: 'Cross-origin proxy access is not allowed' })
     return
   }
 
@@ -173,21 +173,24 @@ export default async function handler(
   }
 
   try {
-    const target = parseTargetUrl(targetRaw)
     const method = typeof body.method === 'string' && body.method ? body.method.toUpperCase() : 'GET'
+    if (!ALLOWED_METHODS.has(method)) {
+      json(res, 405, { ok: false, error: 'Proxy method is not allowed' })
+      return
+    }
     const headers = normalizeHeaders(body.headers)
     const forwardBody = method === 'GET' || method === 'HEAD'
       ? undefined
       : decodeForwardBody(body as ProxyRequestBody)
 
-    const upstream = await fetch(target.toString(), {
+    const upstream = await fetchPublicProxyTarget(targetRaw, {
       method,
       headers,
       body: forwardBody,
-      redirect: 'follow',
+      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     })
 
-    const bytes = new Uint8Array(await upstream.arrayBuffer())
+    const bytes = await readResponseBodyWithinLimit(upstream, MAX_PROXY_RESPONSE_BYTES)
 
     json(res, 200, {
       ok: true,

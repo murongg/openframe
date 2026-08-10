@@ -1,5 +1,9 @@
 import Store from 'electron-store'
+import { app } from 'electron'
+import fs from 'node:fs'
+import path from 'node:path'
 import { DEFAULT_AI_CONFIG, type AIConfig } from '@openframe/providers'
+import { resolveLegacySettingsFiles, resolveSettingsDirectory } from './settings_path'
 
 const modelKeySchema = { type: 'string', default: '' } as const
 
@@ -48,10 +52,25 @@ export interface AppSettings {
   ai_config: AIConfig
   vec_dimension: number
   data_dir: string
+  pending_data_dir: string
+}
+
+const appDataDirectory = app.getPath('appData')
+const settingsDirectory = resolveSettingsDirectory(appDataDirectory)
+const settingsFile = path.join(settingsDirectory, 'settings.json')
+
+if (!fs.existsSync(settingsFile)) {
+  const legacySettingsFile = resolveLegacySettingsFiles(appDataDirectory)
+    .find((candidate) => fs.existsSync(candidate))
+  if (legacySettingsFile) {
+    fs.mkdirSync(settingsDirectory, { recursive: true })
+    fs.copyFileSync(legacySettingsFile, settingsFile)
+  }
 }
 
 export const store = new Store<AppSettings>({
   name: 'settings',
+  cwd: settingsDirectory,
   schema: {
     language: {
       type: 'string',
@@ -136,6 +155,10 @@ export const store = new Store<AppSettings>({
       type: 'string',
       default: '',
     },
+    pending_data_dir: {
+      type: 'string',
+      default: '',
+    },
   },
   defaults: {
     language: 'en',
@@ -148,5 +171,6 @@ export const store = new Store<AppSettings>({
     ai_config: DEFAULT_AI_CONFIG,
     vec_dimension: 0,
     data_dir: '',
+    pending_data_dir: '',
   },
 })

@@ -241,6 +241,10 @@ export function normalizeIds(ids: unknown): string[] {
   return Array.from(new Set(ids.map((value) => (typeof value === 'string' ? value : '')).filter(Boolean)))
 }
 
+export function removeIds(ids: unknown, removedIds: ReadonlySet<string>): string[] {
+  return normalizeIds(ids).filter((id) => !removedIds.has(id))
+}
+
 export function normalizeCostumeRow(row: CostumeRow): CostumeRow {
   return {
     ...row,

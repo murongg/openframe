@@ -9,7 +9,39 @@ permissions:
   contents: write
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests and lint
+        run: |
+          pnpm test:run
+          pnpm lint
+
+      - name: Type-check applications
+        run: |
+          pnpm -C apps/desktop exec tsc --noEmit
+          pnpm -C apps/web exec tsc --noEmit
+          pnpm -C apps/ui exec tsc --noEmit
+
   build:
+    needs: validate
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     env:
@@ -40,8 +72,8 @@ jobs:
             build_command: pnpm -C apps/desktop exec electron-builder --win --x64
             artifact_name: desktop-release-windows-x64
             release_glob: |
-              apps/desktop/release/**/*.exe
-              apps/desktop/release/**/*.blockmap
+              apps/desktop/release/**/Openframe-Windows-*-Setup.exe
+              apps/desktop/release/**/Openframe-Windows-*-Setup.exe.blockmap
           - target: linux-x64
             os: ubuntu-latest
             build_command: pnpm -C apps/desktop exec electron-builder --linux --x64
@@ -176,7 +208,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: apps/desktop/release/**/*
+          path: ${{ matrix.release_glob }}
           if-no-files-found: error
 
       - name: Upload assets to GitHub Release

@@ -1,6 +1,7 @@
 import { ipcMain, dialog, app, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { createObjectStorageFactory } from '@openframe/shared/object-storage-factory'
 import {
@@ -9,7 +10,12 @@ import {
 } from '@openframe/shared/object-storage-config'
 import { store } from '../store'
 import { getDataDir } from '../data_dir'
-import { getRawDb } from '../db'
+import { closeDb, getRawDb } from '../db'
+import {
+  commitDataDirectoryTarget,
+  migrateDataDirectory,
+  resolveDataDirectoryState,
+} from '../data_migration'
 
 function dirSize(dir: string): number {
   try {
@@ -152,11 +158,45 @@ function shortError(err: unknown): string {
 
 const STORAGE_TEST_IMAGE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/5x8AAAAASUVORK5CYII='
 
+async function readDirectoryEntries(dir: string): Promise<string[] | null> {
+  try {
+    return await fs.promises.readdir(dir)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+}
+
+async function prepareMigrationTarget(targetDir: string, allowNonEmpty = false): Promise<string> {
+  const targetEntries = await readDirectoryEntries(targetDir)
+  if (!allowNonEmpty && targetEntries && targetEntries.length > 0) {
+    throw new Error('The selected data directory must be empty')
+  }
+
+  const parentDir = path.dirname(targetDir)
+  await fs.promises.mkdir(parentDir, { recursive: true })
+  const stagingDir = path.join(parentDir, `.${path.basename(targetDir)}.openframe-${randomUUID()}`)
+  await fs.promises.mkdir(stagingDir)
+  return stagingDir
+}
+
+async function copyDirectoryIfPresent(sourceDir: string, targetDir: string): Promise<void> {
+  try {
+    await fs.promises.cp(sourceDir, targetDir, { recursive: true, errorOnExist: true })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+}
+
 export function registerDataHandlers() {
   ipcMain.handle('data:getInfo', () => {
     const defaultDir = app.getPath('userData')
-    const currentDir = getDataDir()
-    const pendingDir = store.get('data_dir') || ''
+    const { currentDir, pendingDir } = resolveDataDirectoryState(
+      defaultDir,
+      store.get('data_dir'),
+      store.get('pending_data_dir'),
+    )
 
     const dbPath = path.join(currentDir, 'app.db')
     const thumbsDir = getThumbsDir(currentDir)
@@ -219,11 +259,20 @@ export function registerDataHandlers() {
   })
 
   ipcMain.handle('data:setDirectory', (_event, newDir: string) => {
-    store.set('data_dir', newDir)
+    const { pendingDir } = resolveDataDirectoryState(
+      app.getPath('userData'),
+      store.get('data_dir'),
+      newDir,
+    )
+    store.set('pending_data_dir', pendingDir)
   })
 
   ipcMain.handle('data:resetDirectory', () => {
-    store.set('data_dir', '')
+    const defaultDir = app.getPath('userData')
+    store.set(
+      'pending_data_dir',
+      path.resolve(getDataDir()) === path.resolve(defaultDir) ? '' : defaultDir,
+    )
   })
 
   ipcMain.handle('data:openDirectory', () => {
@@ -256,8 +305,37 @@ export function registerDataHandlers() {
     },
   )
 
-  ipcMain.handle('data:restart', () => {
+  ipcMain.handle('data:restart', async () => {
+    const defaultDir = app.getPath('userData')
+    const { currentDir, pendingDir } = resolveDataDirectoryState(
+      defaultDir,
+      store.get('data_dir'),
+      store.get('pending_data_dir'),
+    )
+
+    if (pendingDir) {
+      const isDefaultTarget = path.resolve(pendingDir) === path.resolve(defaultDir)
+      await migrateDataDirectory({
+        currentDir,
+        targetDir: pendingDir,
+        prepareTarget: (targetDir) => prepareMigrationTarget(targetDir, isDefaultTarget),
+        backupDatabase: async (targetDatabasePath) => {
+          await getRawDb().backup(targetDatabasePath)
+        },
+        copyDirectory: copyDirectoryIfPresent,
+        commitTarget: (stagingDir, targetDir) => (
+          commitDataDirectoryTarget(stagingDir, targetDir, isDefaultTarget)
+        ),
+        cleanupTarget: async (stagingDir) => {
+          await fs.promises.rm(stagingDir, { recursive: true, force: true })
+        },
+      })
+      store.set('data_dir', isDefaultTarget ? '' : pendingDir)
+      store.set('pending_data_dir', '')
+    }
+
     app.relaunch()
+    closeDb()
     app.exit(0)
   })
 }

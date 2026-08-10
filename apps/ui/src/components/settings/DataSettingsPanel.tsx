@@ -39,6 +39,8 @@ export function DataSettingsPanel({ storageConfig, onStorageConfigChange }: Data
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const [cleaning, setCleaning] = useState(false)
+  const [migrating, setMigrating] = useState(false)
+  const [migrationError, setMigrationError] = useState('')
   const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false)
   const [cleanupResult, setCleanupResult] = useState<{
     removedImages: number
@@ -65,12 +67,26 @@ export function DataSettingsPanel({ storageConfig, onStorageConfigChange }: Data
     const dir = await window.dataAPI.selectDirectory()
     if (!dir) return
     await window.dataAPI.setDirectory(dir)
+    setMigrationError('')
     load()
   }
 
   async function handleReset() {
     await window.dataAPI.resetDirectory()
+    setMigrationError('')
     load()
+  }
+
+  async function handleRestart() {
+    setMigrating(true)
+    setMigrationError('')
+    try {
+      await window.dataAPI.restart()
+    } catch (error: unknown) {
+      setMigrationError(toErrorMessage(error))
+      setMigrating(false)
+      load()
+    }
   }
 
   async function handleCleanup() {
@@ -322,10 +338,17 @@ export function DataSettingsPanel({ storageConfig, onStorageConfigChange }: Data
                 <p className="font-semibold text-sm">{t('settings.dataRestartRequired')}</p>
                 <p className="text-xs opacity-80">{t('settings.dataRestartHint')}</p>
                 <p className="text-xs font-mono mt-1 break-all">{info.pendingDir}</p>
+                {migrationError && (
+                  <p className="text-xs text-error mt-1">{t('settings.dataMigrationFailed', { error: migrationError })}</p>
+                )}
               </div>
-              <button className="btn btn-sm btn-warning gap-1" onClick={() => window.dataAPI.restart()}>
-                <RefreshCw size={14} />
-                {t('settings.dataRestart')}
+              <button
+                className="btn btn-sm btn-warning gap-1"
+                disabled={migrating}
+                onClick={() => void handleRestart()}
+              >
+                <RefreshCw size={14} className={migrating ? 'animate-spin' : ''} />
+                {migrating ? t('settings.dataMigrating') : t('settings.dataRestart')}
               </button>
             </div>
           )}

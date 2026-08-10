@@ -51,8 +51,3 @@ async function init() {
 }
 
 init()
-
-// Use contextBridge
-window.ipcRenderer.on('main-process-message', (_event: unknown, message: unknown) => {
-  console.log(message)
-})

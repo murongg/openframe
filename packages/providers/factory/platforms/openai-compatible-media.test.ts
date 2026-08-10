@@ -164,6 +164,7 @@ describe('openai-compatible media adapter', () => {
     expect(result).toEqual({
       data: [4, 5, 6],
       mediaType: 'video/webm',
+      url: 'https://cdn.example.com/out.webm',
     })
   })
 

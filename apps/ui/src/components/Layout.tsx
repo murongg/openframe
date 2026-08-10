@@ -105,11 +105,17 @@ export default function Layout({ children }: LayoutProps) {
     setUpdateNotice(null)
   }, [isDesktopRuntime, updateNotice])
 
+  const persistOnboardingSeen = useCallback(async () => {
+    await Promise.all([
+      window.settingsAPI.upsert('onboarding_seen', '1'),
+      window.settingsAPI.upsert('onboarding_version', ONBOARDING_VERSION),
+    ])
+  }, [])
+
   const markOnboardingSeen = useCallback(() => {
     setOnboardingPending(false)
-    void window.settingsAPI.upsert('onboarding_seen', '1')
-    void window.settingsAPI.upsert('onboarding_version', ONBOARDING_VERSION)
-  }, [])
+    void persistOnboardingSeen()
+  }, [persistOnboardingSeen])
 
   useEffect(() => {
     if (isStudioWindow) return
@@ -317,14 +323,18 @@ export default function Layout({ children }: LayoutProps) {
         },
       })
 
-      onboardingDriver.drive()
+      void persistOnboardingSeen()
+        .catch(() => undefined)
+        .finally(() => {
+          if (!disposed) onboardingDriver.drive()
+        })
     }, 120)
 
     return () => {
       disposed = true
       window.clearTimeout(timer)
     }
-  }, [isStudioWindow, markOnboardingSeen, navigate, onboardingPending, t])
+  }, [isStudioWindow, markOnboardingSeen, navigate, onboardingPending, persistOnboardingSeen, t])
 
   if (isStudioWindow) {
     return (
